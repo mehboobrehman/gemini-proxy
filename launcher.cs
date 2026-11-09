@@ -13,6 +13,7 @@ namespace GeminiProxyLauncher
 {
     public class LauncherApp : ApplicationContext
     {
+        public const string Version = "0.1.0";
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool FreeConsole();
 
@@ -168,7 +169,7 @@ namespace GeminiProxyLauncher
         {
             contextMenu = new ContextMenuStrip();
 
-            statusItem = new ToolStripMenuItem("gemini-proxy - Stopped");
+            statusItem = new ToolStripMenuItem("gemini-proxy v" + Version + " - Stopped");
             statusItem.Enabled = false;
             statusItem.Font = new Font(statusItem.Font, FontStyle.Bold);
 
@@ -286,14 +287,14 @@ namespace GeminiProxyLauncher
                 if (isStarting)
                 {
                     trayIcon.Icon = orangeIcon;
-                    trayIcon.Text = "gemini-proxy - Starting...";
-                    statusItem.Text = "gemini-proxy - Starting...";
+                    trayIcon.Text = "gemini-proxy v" + Version + " - Starting...";
+                    statusItem.Text = "gemini-proxy v" + Version + " - Starting...";
                 }
                 else
                 {
                     trayIcon.Icon = redIcon;
-                    trayIcon.Text = "gemini-proxy - Stopped";
-                    statusItem.Text = "gemini-proxy - Stopped";
+                    trayIcon.Text = "gemini-proxy v" + Version + " - Stopped";
+                    statusItem.Text = "gemini-proxy v" + Version + " - Stopped";
                 }
                 startServerItem.Enabled = !isStarting;
                 stopServerItem.Enabled = isStarting;
@@ -304,21 +305,21 @@ namespace GeminiProxyLauncher
                 if (lastStatus == "ok")
                 {
                     trayIcon.Icon = greenIcon;
-                    trayIcon.Text = string.Format("gemini-proxy - Healthy (Port {0})", Port);
-                    statusItem.Text = string.Format("gemini-proxy - Healthy (Port {0})", Port);
+                    trayIcon.Text = string.Format("gemini-proxy v" + Version + " - Healthy (Port {0})", Port);
+                    statusItem.Text = string.Format("gemini-proxy v" + Version + " - Healthy (Port {0})", Port);
                     isStarting = false;
                 }
                 else if (lastStatus == "error")
                 {
                     trayIcon.Icon = blackIcon;
-                    trayIcon.Text = "gemini-proxy - Proxy Error";
-                    statusItem.Text = "gemini-proxy - Proxy Error";
+                    trayIcon.Text = "gemini-proxy v" + Version + " - Proxy Error";
+                    statusItem.Text = "gemini-proxy v" + Version + " - Proxy Error";
                 }
                 else // not_responding or unknown
                 {
                     trayIcon.Icon = orangeIcon;
-                    trayIcon.Text = "gemini-proxy - Connecting...";
-                    statusItem.Text = "gemini-proxy - Connecting...";
+                    trayIcon.Text = "gemini-proxy v" + Version + " - Connecting...";
+                    statusItem.Text = "gemini-proxy v" + Version + " - Connecting...";
                 }
 
                 startServerItem.Enabled = false;
