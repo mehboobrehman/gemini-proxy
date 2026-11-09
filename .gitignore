@@ -1,3 +1,8 @@
 node_modules/
 *.log
 .DS_Store
+*.exe
+!launcher.cs
+!test_launcher.cs
+!hello.cs
+!.gitignore
