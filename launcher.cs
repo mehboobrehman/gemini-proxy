@@ -32,6 +32,7 @@ namespace GeminiProxyLauncher
         private bool isServerRunning = false;
         private bool isStarting = false;
         private string lastStatus = "unknown";
+        private Icon mainIcon;
         private Icon greenIcon;
         private Icon redIcon;
         private Icon orangeIcon;
@@ -58,7 +59,7 @@ namespace GeminiProxyLauncher
 
             trayIcon = new NotifyIcon()
             {
-                Icon = redIcon,
+                Icon = mainIcon ?? redIcon,
                 ContextMenuStrip = contextMenu,
                 Visible = true,
                 Text = "gemini-proxy - Initializing..."
@@ -139,6 +140,15 @@ namespace GeminiProxyLauncher
 
         private void InitializeIcons()
         {
+            try
+            {
+                mainIcon = Icon.ExtractAssociatedIcon(Process.GetCurrentProcess().MainModule.FileName);
+            }
+            catch
+            {
+                mainIcon = null;
+            }
+
             greenIcon = CreateCircleIcon(Color.FromArgb(46, 204, 113));  // Emerald Green (#2ecc71)
             redIcon = CreateCircleIcon(Color.FromArgb(231, 76, 60));    // Alizarin Red (#e74c3c)
             orangeIcon = CreateCircleIcon(Color.FromArgb(243, 156, 18)); // Orange (#f39c12)
@@ -308,7 +318,7 @@ namespace GeminiProxyLauncher
             {
                 if (lastStatus == "ok")
                 {
-                    trayIcon.Icon = greenIcon;
+                    trayIcon.Icon = mainIcon ?? greenIcon;
                     trayIcon.Text = string.Format("gemini-proxy v" + Version + " - Healthy (Port {0})", Port);
                     statusItem.Text = string.Format("gemini-proxy v" + Version + " - Healthy (Port {0})", Port);
                     isStarting = false;
