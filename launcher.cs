@@ -22,6 +22,7 @@ namespace GeminiProxyLauncher
         private ToolStripMenuItem statusItem;
         private ToolStripMenuItem startServerItem;
         private ToolStripMenuItem stopServerItem;
+        private ToolStripMenuItem restartServerItem;
         private ToolStripMenuItem openBrowserItem;
         private ToolStripMenuItem startWithWindowsItem;
         private ToolStripMenuItem startMinimizedItem;
@@ -175,6 +176,7 @@ namespace GeminiProxyLauncher
 
             startServerItem = new ToolStripMenuItem("Start Server", null, (s, e) => StartServer());
             stopServerItem = new ToolStripMenuItem("Stop Server", null, (s, e) => StopServer());
+            restartServerItem = new ToolStripMenuItem("Restart Server", null, (s, e) => RestartServer());
             openBrowserItem = new ToolStripMenuItem("Open in Browser", null, (s, e) => OpenInBrowser());
             ToolStripMenuItem openTerminalItem = new ToolStripMenuItem("Open Terminal", null, (s, e) => OpenTerminal());
 
@@ -197,6 +199,7 @@ namespace GeminiProxyLauncher
                 new ToolStripSeparator(),
                 startServerItem,
                 stopServerItem,
+                restartServerItem,
                 openBrowserItem,
                 openTerminalItem,
                 locateFolderItem,
@@ -298,6 +301,7 @@ namespace GeminiProxyLauncher
                 }
                 startServerItem.Enabled = !isStarting;
                 stopServerItem.Enabled = isStarting;
+                restartServerItem.Enabled = isStarting;
                 openBrowserItem.Enabled = false;
             }
             else
@@ -324,6 +328,7 @@ namespace GeminiProxyLauncher
 
                 startServerItem.Enabled = false;
                 stopServerItem.Enabled = true;
+                restartServerItem.Enabled = true;
                 openBrowserItem.Enabled = true;
             }
         }
@@ -420,10 +425,52 @@ namespace GeminiProxyLauncher
                 trayIcon.Text = "gemini-proxy - Stopping...";
                 isStarting = false;
                 stopServerItem.Enabled = false;
+                restartServerItem.Enabled = false;
             }
             catch (Exception ex)
             {
                 MessageBox.Show("Failed to stop server: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void RestartServer()
+        {
+            try
+            {
+                // Update UI state to show restarting
+                trayIcon.Icon = orangeIcon;
+                trayIcon.Text = "gemini-proxy v" + Version + " - Restarting...";
+                statusItem.Text = "gemini-proxy v" + Version + " - Restarting...";
+                isStarting = true;
+                UpdateUI(); // Refresh UI to disable menu items
+
+                // Stop server synchronously to ensure cleanup before starting again
+                ProcessStartInfo stopPsi = new ProcessStartInfo();
+                stopPsi.FileName = "powershell.exe";
+                stopPsi.Arguments = string.Format("-NoProfile -ExecutionPolicy Bypass -Command \"$conns = Get-NetTCPConnection -LocalPort {0} -ErrorAction SilentlyContinue; if ($conns) {{ foreach ($procId in ($conns.OwningProcess | Sort-Object -Unique)) {{ Stop-Process -Id $procId -Force }} }}; Get-CimInstance Win32_Process | Where-Object {{ $_.CommandLine -like '*src/server.ts*' }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force }}\"", Port);
+                stopPsi.WindowStyle = ProcessWindowStyle.Hidden;
+                stopPsi.CreateNoWindow = true;
+                stopPsi.UseShellExecute = false;
+
+                using (Process stopProc = Process.Start(stopPsi))
+                {
+                    if (stopProc != null)
+                    {
+                        stopProc.WaitForExit(5000); // Wait up to 5 seconds
+                    }
+                }
+
+                // Brief pause to allow OS to release the port
+                System.Threading.Thread.Sleep(500);
+
+                // Start the server again
+                StartServer();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Failed to restart server: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                isStarting = false;
+                PollStatus();
             }
         }
 
