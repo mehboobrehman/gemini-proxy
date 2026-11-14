@@ -13,7 +13,7 @@ namespace GeminiProxyLauncher
 {
     public class LauncherApp : ApplicationContext
     {
-        public const string Version = "0.1.1";
+        public const string Version = "0.1.2";
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool FreeConsole();
 
