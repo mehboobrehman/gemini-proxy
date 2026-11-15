@@ -3,10 +3,8 @@ import { join, dirname } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import type { StoreState } from "./types";
+import { encryptSecret, decryptSecret } from "./secureStorage";
 
-// IMPORTANT: this project directory lives under OneDrive. Refresh tokens must
-// never be written inside it or they'd sync to the cloud. Use the OS's local
-// (non-roaming/non-synced) app-data directory instead.
 export function getConfigDir(): string {
   if (process.platform === "win32") {
     return join(process.env.LOCALAPPDATA || join(homedir(), "AppData", "Local"), "gemini-proxy");
@@ -31,6 +29,29 @@ export async function loadState(): Promise<StoreState> {
     const data = JSON.parse(raw) as StoreState;
     if (data.version !== 1 || !Array.isArray(data.accounts)) return emptyState();
     if (!data.cooldowns) data.cooldowns = {};
+
+    // Decrypt sensitive fields (API keys, refresh tokens, access tokens) transparently
+    for (const acc of data.accounts) {
+      if (acc.backend === "apikey" && acc.apiKey) {
+        try {
+          acc.apiKey = await decryptSecret(acc.apiKey);
+        } catch {
+          // If decryption fails, keep as is (might be plaintext already)
+        }
+      } else if (acc.backend === "antigravity") {
+        if (acc.refreshToken) {
+          try {
+            acc.refreshToken = await decryptSecret(acc.refreshToken);
+          } catch {}
+        }
+        if (acc.accessToken) {
+          try {
+            acc.accessToken = await decryptSecret(acc.accessToken);
+          } catch {}
+        }
+      }
+    }
+
     return data;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return emptyState();
@@ -39,17 +60,30 @@ export async function loadState(): Promise<StoreState> {
   }
 }
 
-/** Serialized, atomic (temp file + rename) write — safe against concurrent callers within this process. */
 export async function saveState(state: StoreState): Promise<void> {
   const path = getStorePath();
   const task = writeQueue.then(async () => {
     await fs.mkdir(dirname(path), { recursive: true });
+
+    // Clone state to encrypt secrets before saving to disk
+    const cloned: StoreState = JSON.parse(JSON.stringify(state));
+    for (const acc of cloned.accounts) {
+      if (acc.backend === "apikey" && acc.apiKey) {
+        acc.apiKey = await encryptSecret(acc.apiKey);
+      } else if (acc.backend === "antigravity") {
+        if (acc.refreshToken) {
+          acc.refreshToken = await encryptSecret(acc.refreshToken);
+        }
+        if (acc.accessToken) {
+          acc.accessToken = await encryptSecret(acc.accessToken);
+        }
+      }
+    }
+
     const tmpPath = join(tmpdir(), `gemini-proxy-state-${randomUUID()}.tmp`);
-    await fs.writeFile(tmpPath, JSON.stringify(state, null, 2), "utf-8");
+    await fs.writeFile(tmpPath, JSON.stringify(cloned, null, 2), "utf-8");
     await fs.rename(tmpPath, path);
   });
-  // Swallow errors in the chain itself so one failed write doesn't wedge the
-  // queue for subsequent callers; the error still propagates to this caller.
   writeQueue = task.catch(() => {});
   return task;
 }

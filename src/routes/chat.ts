@@ -1,10 +1,11 @@
 import { translateOpenAIToGemini, TranslationError } from "../translate/openai-to-gemini";
-import { createOpenAIStreamTranslator, aggregateGeminiToOpenAI } from "../translate/gemini-to-openai";
+import { createOpenAIStreamTranslator, aggregateGeminiToOpenAI, usageFromGemini } from "../translate/gemini-to-openai";
 import { resolveModel, isKnownModel } from "../models";
 import { AUTO_MODEL_ID, buildAutoChain } from "../auto";
 import { orchestrateGenerate, orchestrateAutoGenerate, type GenerateHandle } from "../orchestrate";
 import { accountIdentity } from "../accounts";
 import { NoAccountAvailableError, TransportError, openAIErrorResponse } from "../errors";
+import { recordUsage } from "../quotaTracker";
 import type { OpenAIChatRequest } from "../types";
 
 export async function handleChatCompletions(req: Request): Promise<Response> {
@@ -81,10 +82,16 @@ export async function handleChatCompletions(req: Request): Promise<Response> {
   if (!streaming) {
     try {
       const result = await aggregateGeminiToOpenAI(handle.events, responseModelId, toolNameMap);
+      await recordUsage({
+        model: responseModelId,
+        accountId: handle.accountUsed.id,
+        usage: result.usage as any,
+      });
       return new Response(JSON.stringify(result), {
         headers: { "content-type": "application/json", "x-served-via": servedVia },
       });
     } catch (err) {
+      await recordUsage({ model: responseModelId, accountId: handle.accountUsed.id, isError: true });
       return openAIErrorResponse(502, err instanceof Error ? err.message : "Upstream stream failed mid-response", "upstream_error");
     }
   }
@@ -100,27 +107,23 @@ export async function handleChatCompletions(req: Request): Promise<Response> {
           for (const line of translator.feed(gemini)) controller.enqueue(encoder.encode(line + "\n\n"));
         }
         for (const line of translator.finalizeLines()) controller.enqueue(encoder.encode(line + "\n\n"));
+        const finalUsage = translator.getLastUsage();
+        if (finalUsage) {
+          await recordUsage({
+            model: responseModelId,
+            accountId: handle.accountUsed.id,
+            usage: usageFromGemini(finalUsage),
+          });
+        }
       } catch (err) {
-        // Mid-stream failure. orchestrate.ts already committed to this
-        // account (first event was already delivered), so we must NOT retry
-        // here — that would duplicate content or re-issue tool calls under
-        // new ids. But that's no reason to hide the failure either: closing
-        // the stream via the normal finalizeLines() path (as this used to do
-        // once any content had been emitted) synthesizes a clean "stop"/
-        // "tool_calls" finish chunk indistinguishable from a real
-        // completion — the caller has no way to tell a truncated response
-        // from a deliberately short one. Always surface the error instead,
-        // even after content has streamed.
         const message = err instanceof Error ? err.message : String(err);
         for (const line of translator.finalizeWithError(message)) controller.enqueue(encoder.encode(line + "\n\n"));
+        await recordUsage({ model: responseModelId, accountId: handle.accountUsed.id, isError: true });
       } finally {
         controller.close();
       }
     },
-    cancel() {
-      // Client disconnected — nothing to clean up beyond letting the abort
-      // signal (already wired into the upstream fetch) propagate.
-    },
+    cancel() {},
   });
 
   return new Response(stream, {

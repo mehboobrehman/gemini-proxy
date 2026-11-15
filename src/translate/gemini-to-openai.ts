@@ -78,6 +78,8 @@ export interface StreamTranslator {
    * deliberately short one unless this says so.
    */
   finalizeWithError(message: string): string[];
+  /** Returns the last seen usage metadata for token tracking. */
+  getLastUsage(): GeminiUsageMetadata | undefined;
 }
 
 export function createOpenAIStreamTranslator(model: string, toolNameMap: Map<string, string>, includeUsage: boolean): StreamTranslator {
@@ -178,7 +180,7 @@ export function createOpenAIStreamTranslator(model: string, toolNameMap: Map<str
     return lines;
   }
 
-  return { feed, finalizeLines, finalizeWithError };
+  return { feed, finalizeLines, finalizeWithError, getLastUsage: () => lastUsage };
 }
 
 // ---------------------------------------------------------------------------
