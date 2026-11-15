@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">gemini-proxy</string>
+    <string name="title_activity_main">gemini-proxy</string>
+    <string name="package_name">com.geminiproxy.app</string>
+    <string name="custom_url_scheme">com.geminiproxy.app</string>
+</resources>

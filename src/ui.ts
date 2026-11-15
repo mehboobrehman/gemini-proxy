@@ -2,86 +2,38 @@ const HTML = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
 <title>gemini-proxy</title>
 <style>
   :root { color-scheme: light dark; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    max-width: 1040px;
-    margin: 2.5rem auto;
-    padding: 0 1.25rem;
+    width: 100%;
+    margin: 0;
+    padding: 0 1rem;
     line-height: 1.5;
+    box-sizing: border-box;
+    overflow-x: hidden; /* Prevent horizontal scrolling */
   }
-  h1 { font-size: 1.3rem; margin-bottom: 0.25rem; }
-  .sub { opacity: 0.65; font-size: 0.9rem; margin-bottom: 1.5rem; }
-  code, .mono { font-family: ui-monospace, "SF Mono", Consolas, monospace; }
-  .baseurl {
-    background: rgba(127,127,127,0.12);
-    border-radius: 8px;
-    padding: 0.7rem 0.9rem;
-    font-size: 0.95rem;
-    margin-bottom: 1.75rem;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 0.5rem;
+  
+  h1 { font-size: 1.5rem; }
+  h2 { font-size: 1.25rem; }
+
+  /* Ensure touch targets are at least 48px */
+  button, .badge.clickable, .row-actions button {
+    min-height: 48px;
+    min-width: 48px;
+    padding: 12px 16px;
+    font-size: 1rem; /* Better readability on mobile */
   }
-  .baseurl button { flex-shrink: 0; }
-  table { width: 100%; border-collapse: collapse; margin-bottom: 1rem; font-size: 0.9rem; }
-  th, td { text-align: left; padding: 0.6rem 0.7rem; border-bottom: 1px solid rgba(127,127,127,0.4); }
-  th { opacity: 0.6; font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap; border-bottom: 2px solid rgba(127,127,127,0.4); }
-  .muted { opacity: 0.4; }
-  .badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.75rem; position: relative; white-space: nowrap; }
-  .badge.ok { background: #1a7f3722; color: #1a7f37; }
-  .badge.bad { background: #cf222e22; color: #cf222e; }
-  .badge.cooldown { background: #9a670022; color: #9a6700; }
-  .badge.exhausted { background: #bc4c0022; color: #bc4c00; }
-  .badge.disabled { background: #6e768122; color: #6e7681; }
-  .badge[data-tooltip] { cursor: help; }
-  .badge.clickable { cursor: pointer; }
-  .badge.clickable:hover { filter: brightness(0.92); }
-  .copyable { position: relative; cursor: pointer; border-radius: 4px; transition: background 0.12s ease; }
-  .copyable:hover { background: rgba(127,127,127,0.15); }
-  .badge[data-tooltip]::after, .copyable[data-tooltip]::after {
-    content: attr(data-tooltip);
-    position: absolute; left: 50%; bottom: calc(100% + 9px); transform: translate(-50%, 2px);
-    background: #1c1c1cf0; color: #fff; white-space: pre-line; text-align: left;
-    width: max-content; max-width: 260px; padding: 0.5rem 0.7rem; border-radius: 7px;
-    font-size: 0.75rem; font-weight: 400; line-height: 1.45; letter-spacing: normal; text-transform: none;
-    box-shadow: 0 8px 20px rgba(0,0,0,0.3); opacity: 0; pointer-events: none; z-index: 30;
-    transition: opacity 0.12s ease, transform 0.12s ease;
-  }
-  .badge[data-tooltip]::before, .copyable[data-tooltip]::before {
-    content: ''; position: absolute; left: 50%; bottom: calc(100% + 4px); transform: translate(-50%, 2px);
-    border: 5px solid transparent; border-top-color: #1c1c1cf0;
-    opacity: 0; pointer-events: none; z-index: 30; transition: opacity 0.12s ease, transform 0.12s ease;
-  }
-  .badge[data-tooltip]:hover::after, .badge[data-tooltip]:hover::before,
-  .copyable[data-tooltip]:hover::after, .copyable[data-tooltip]:hover::before {
-    opacity: 1; transform: translate(-50%, 0);
-  }
-  button {
-    font: inherit; font-size: 0.85rem; padding: 0.4rem 0.8rem; border-radius: 6px;
-    border: 1px solid rgba(127,127,127,0.4); background: transparent; cursor: pointer; color: inherit;
-  }
-  button:hover { background: rgba(127,127,127,0.12); }
-  button.primary { background: #2563eb; border-color: #2563eb; color: white; }
-  button.primary:hover { background: #1d4ed8; }
-  button.danger { color: #cf222e; border-color: #cf222e55; }
-  .row-actions { display: flex; gap: 0.4rem; }
-  .add-row { display: flex; gap: 0.6rem; margin: 1rem 0 2rem; flex-wrap: wrap; }
-  .empty { opacity: 0.6; font-size: 0.9rem; padding: 1rem 0; }
-  .warn {
-    border: 1px solid #9a670055;
-    background: #9a670011;
-    border-radius: 8px;
-    padding: 0.8rem 1rem;
-    font-size: 0.85rem;
-    margin-top: 2rem;
-  }
-  #apikeyForm { display: none; gap: 0.5rem; margin: 0.5rem 0 1.5rem; }
-  #apikeyForm input { font: inherit; padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid rgba(127,127,127,0.4); background: transparent; color: inherit; }
+
+  table { width: 100%; display: block; overflow-x: auto; }
+  
+  .add-row { display: flex; gap: 0.5rem; margin: 1rem 0; flex-direction: column; }
+  .add-row button { width: 100%; }
+
+  #apikeyForm { display: none; gap: 0.5rem; margin: 0.5rem 0; flex-direction: column; }
+  #apikeyForm input { font: inherit; padding: 12px; border-radius: 6px; border: 1px solid rgba(127,127,127,0.4); background: transparent; color: inherit; width: 100%; box-sizing: border-box; }
   #status { font-size: 0.85rem; opacity: 0.8; margin: 0.5rem 0 1rem; min-height: 1.2em; }
   .modal-overlay {
     position: fixed; inset: 0; background: rgba(0,0,0,0.45);
@@ -337,6 +289,7 @@ function buildQuotaPanel(accountId) {
   for (const m of models) {
     const frac = m.quotaInfo ? m.quotaInfo.remainingFraction : undefined;
     const pct = frac !== undefined && frac !== null ? Math.round(frac * 100) : null;
+    const resetTime = m.quotaInfo ? m.quotaInfo.resetTime : undefined;
     const resetTimeMs = resetTime ? new Date(resetTime).getTime() : null;
     const resetsIn = resetTimeMs ? humanizeDuration((resetTimeMs - Date.now()) / 1000) : '—';
     // data-reset-time lets tickCountdowns() update just this cell every
@@ -719,6 +672,7 @@ setInterval(tickCountdowns, 1000); // live countdown tick from the cached data, 
 </body>
 </html>`;
 
+export { HTML };
 export function renderUI(): Response {
   return new Response(HTML, { headers: { "content-type": "text/html; charset=utf-8" } });
 }

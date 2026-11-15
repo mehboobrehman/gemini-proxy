@@ -6,3 +6,6 @@ node_modules/
 !test_launcher.cs
 !hello.cs
 !.gitignore
+dist/
+*.pdb
+*.exe
