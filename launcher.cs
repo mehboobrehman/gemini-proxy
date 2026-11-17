@@ -13,7 +13,7 @@ namespace GeminiProxyLauncher
 {
     public class LauncherApp : ApplicationContext
     {
-        public const string Version = "0.1.2";
+        public const string Version = "0.1.3";
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool FreeConsole();
 
@@ -24,6 +24,7 @@ namespace GeminiProxyLauncher
         private ToolStripMenuItem stopServerItem;
         private ToolStripMenuItem restartServerItem;
         private ToolStripMenuItem openBrowserItem;
+        private ToolStripMenuItem quotaDashboardItem;
         private ToolStripMenuItem startWithWindowsItem;
         private ToolStripMenuItem startMinimizedItem;
         private ToolStripMenuItem exitItem;
@@ -32,6 +33,8 @@ namespace GeminiProxyLauncher
         private bool isServerRunning = false;
         private bool isStarting = false;
         private string lastStatus = "unknown";
+        private long totalTokens = 0;
+        private int requestCount = 0;
         private Icon mainIcon;
         private Icon greenIcon;
         private Icon redIcon;
@@ -188,6 +191,7 @@ namespace GeminiProxyLauncher
             stopServerItem = new ToolStripMenuItem("Stop Server", null, (s, e) => StopServer());
             restartServerItem = new ToolStripMenuItem("Restart Server", null, (s, e) => RestartServer());
             openBrowserItem = new ToolStripMenuItem("Open in Browser", null, (s, e) => OpenInBrowser());
+            quotaDashboardItem = new ToolStripMenuItem("Quota Dashboard", null, (s, e) => OpenQuotaDashboard());
             ToolStripMenuItem openTerminalItem = new ToolStripMenuItem("Open Terminal", null, (s, e) => OpenTerminal());
 
             ToolStripMenuItem locateFolderItem = new ToolStripMenuItem("Locate Project Folder...", null, (s, e) => LocateProjectFolder());
@@ -211,6 +215,7 @@ namespace GeminiProxyLauncher
                 stopServerItem,
                 restartServerItem,
                 openBrowserItem,
+                quotaDashboardItem,
                 openTerminalItem,
                 locateFolderItem,
                 sep1,
@@ -277,6 +282,11 @@ namespace GeminiProxyLauncher
                             else if (json.Contains("\"status\":\"error\"")) status = "error";
                         }
                     }
+
+                    if (status == "ok")
+                    {
+                        FetchQuotaStats();
+                    }
                 }
                 catch
                 {
@@ -313,13 +323,17 @@ namespace GeminiProxyLauncher
                 stopServerItem.Enabled = isStarting;
                 restartServerItem.Enabled = isStarting;
                 openBrowserItem.Enabled = false;
+                quotaDashboardItem.Enabled = false;
             }
             else
             {
                 if (lastStatus == "ok")
                 {
                     trayIcon.Icon = mainIcon ?? greenIcon;
-                    trayIcon.Text = string.Format("gemini-proxy v" + Version + " - Healthy (Port {0})", Port);
+                    string tooltip = string.Format("gemini-proxy v{0} - Healthy\nTokens: {1}\nRequests: {2}", 
+                        Version, FormatLargeNumber(totalTokens), FormatLargeNumber(requestCount));
+                    if (tooltip.Length > 63) tooltip = tooltip.Substring(0, 60) + "...";
+                    trayIcon.Text = tooltip;
                     statusItem.Text = string.Format("gemini-proxy v" + Version + " - Healthy (Port {0})", Port);
                     isStarting = false;
                 }
@@ -340,6 +354,7 @@ namespace GeminiProxyLauncher
                 stopServerItem.Enabled = true;
                 restartServerItem.Enabled = true;
                 openBrowserItem.Enabled = true;
+                quotaDashboardItem.Enabled = true;
             }
         }
 
@@ -491,6 +506,67 @@ namespace GeminiProxyLauncher
                 Process.Start(new ProcessStartInfo(string.Format("http://localhost:{0}/", Port)) { UseShellExecute = true });
             }
             catch { }
+        }
+
+        private void OpenQuotaDashboard()
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo(string.Format("http://localhost:{0}/#overallSummary", Port)) { UseShellExecute = true });
+            }
+            catch { }
+        }
+
+        private void FetchQuotaStats()
+        {
+            try
+            {
+                HttpWebRequest request = (HttpWebRequest)WebRequest.Create(string.Format("http://127.0.0.1:{0}/admin/quota", Port));
+                request.Timeout = 500;
+                using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
+                {
+                    using (StreamReader reader = new StreamReader(response.GetResponseStream()))
+                    {
+                        string json = reader.ReadToEnd();
+                        int overallIdx = json.IndexOf("\"overall\"");
+                        if (overallIdx != -1)
+                        {
+                            string overallJson = json.Substring(overallIdx);
+                            int endOverall = overallJson.IndexOf("},");
+                            if (endOverall != -1) overallJson = overallJson.Substring(0, endOverall);
+                            
+                            totalTokens = ExtractLong(overallJson, "totalTokens");
+                            requestCount = (int)ExtractLong(overallJson, "requestCount");
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
+
+        private long ExtractLong(string json, string key)
+        {
+            try
+            {
+                string search = "\"" + key + "\":";
+                int idx = json.IndexOf(search);
+                if (idx == -1) return 0;
+                int start = idx + search.Length;
+                int end = json.IndexOfAny(new char[] { ',', '}', ' ' }, start);
+                if (end == -1) end = json.Length;
+                string val = json.Substring(start, end - start).Trim(':', ' ', '"', '\n', '\r', '\t');
+                long result;
+                if (long.TryParse(val, out result)) return result;
+            }
+            catch { }
+            return 0;
+        }
+
+        private string FormatLargeNumber(long n)
+        {
+            if (n >= 1000000) return (n / 1000000.0).ToString("0.#") + "M";
+            if (n >= 1000) return (n / 1000.0).ToString("0.#") + "k";
+            return n.ToString();
         }
 
         private void ToggleStartWithWindows()

@@ -73,6 +73,29 @@ const HTML = `<!doctype html>
     transition: opacity 0.15s ease, transform 0.15s ease;
   }
   #status.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* Quota & Usage Dashboard */
+  .quota-summary { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 1rem; margin: 1.5rem 0; }
+  .summary-card {
+    background: rgba(127,127,127,0.1); border-radius: 8px; padding: 1rem;
+    display: flex; flex-direction: column; gap: 0.25rem;
+    border: 1px solid rgba(127,127,127,0.15);
+  }
+  .summary-card .label { font-size: 0.75rem; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.05em; }
+  .summary-card .value { font-size: 1.25rem; font-weight: 600; }
+  .summary-card .sub-value { font-size: 0.8rem; opacity: 0.6; }
+  
+  .dashboard-section { margin-top: 2.5rem; border-top: 1px solid rgba(127,127,127,0.2); padding-top: 1.5rem; }
+  .dashboard-section h2 { margin-top: 0; }
+  .usage-table { font-size: 0.85rem; }
+  .usage-table th { text-align: left; background: rgba(127,127,127,0.05); padding: 8px 12px; }
+  .usage-table td { padding: 8px 12px; border-bottom: 1px solid rgba(127,127,127,0.05); }
+  .usage-table tr:last-child td { border-bottom: none; }
+  .usage-table .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+  .text-right { text-align: right; }
+  .dim { opacity: 0.5; }
+  .err-count { color: #ff7b72; font-weight: 500; }
+  .rl-count { color: #d29922; font-weight: 500; }
 </style>
 </head>
 <body>
@@ -99,6 +122,47 @@ const HTML = `<!doctype html>
     <input id="apikeyInput" type="text" placeholder="AIza..." size="40" />
     <input id="apikeyLabel" type="text" placeholder="label (optional)" size="16" />
     <button class="primary" onclick="submitApiKey()">Add</button>
+  </div>
+
+  <div class="dashboard-section">
+    <h2>Quota & Usage Monitoring</h2>
+    <div class="quota-summary" id="overallSummary">
+      <div class="summary-card"><div class="label">Total Tokens</div><div class="value" id="stat-totalTokens">0</div></div>
+      <div class="summary-card"><div class="label">Prompt Tokens</div><div class="value" id="stat-promptTokens">0</div></div>
+      <div class="summary-card"><div class="label">Completion Tokens</div><div class="value" id="stat-completionTokens">0</div></div>
+      <div class="summary-card"><div class="label">Requests</div><div class="value" id="stat-requestCount">0</div></div>
+      <div class="summary-card"><div class="label">Errors</div><div class="value err-count" id="stat-errorCount">0</div></div>
+      <div class="summary-card"><div class="label">Rate Limits</div><div class="value rl-count" id="stat-rateLimitCount">0</div></div>
+    </div>
+
+    <h3 style="font-size:1rem;margin-top:1.5rem;">Model Usage Breakdown</h3>
+    <table class="usage-table" id="modelUsageTable">
+      <thead>
+        <tr>
+          <th>Model ID</th>
+          <th class="text-right">Requests</th>
+          <th class="text-right">Tokens (P/C)</th>
+          <th class="text-right">Errors</th>
+          <th class="text-right">Rate Limits</th>
+          <th class="text-right">Last Active</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <h3 style="font-size:1rem;margin-top:1.5rem;">Account Usage Breakdown</h3>
+    <table class="usage-table" id="accountUsageTable">
+      <thead>
+        <tr>
+          <th>Account ID / Label</th>
+          <th class="text-right">Requests</th>
+          <th class="text-right">Total Tokens</th>
+          <th class="text-right">Errors</th>
+          <th class="text-right">Last Active</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
   </div>
 
   <div id="status"></div>
@@ -193,28 +257,99 @@ function toggleApiKeyForm() {
 // countdowns tick down live every second from this cached copy (see
 // tickCountdowns) without hammering the server or rebuilding the table.
 let latestData = { accounts: [], cooldowns: [], modelsByBackend: {} };
+let latestQuota = { overall: {}, models: {}, accounts: {} };
 
-function humanizeDuration(totalSeconds) {
-  const s = Math.max(0, Math.round(totalSeconds));
-  if (s < 60) return s + 's';
-  const m = Math.floor(s / 60);
-  if (s < 3600) return m + 'm ' + (s % 60) + 's';
-  const h = Math.floor(s / 3600);
-  if (s < 86400) return h + 'h ' + (Math.floor(s / 60) % 60) + 'm';
-  const d = Math.floor(s / 86400);
-  return d + 'd ' + (Math.floor(s / 3600) % 24) + 'h';
+function formatNumber(num) {
+  if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+  if (num >= 1000) return (num / 1000).toFixed(1) + 'k';
+  return num.toLocaleString();
+}
+
+function formatRelativeTime(ts) {
+  if (!ts) return 'never';
+  const diff = Date.now() - ts;
+  if (diff < 60000) return 'just now';
+  if (diff < 3600000) return Math.floor(diff / 60000) + 'm ago';
+  if (diff < 86400000) return Math.floor(diff / 3600000) + 'h ago';
+  return new Date(ts).toLocaleDateString();
 }
 
 async function refreshData() {
-  const res = await fetch('/admin/accounts');
-  const data = await res.json();
-  // Skip the rebuild when nothing actually changed — every 10s poll
-  // otherwise recreates every row's DOM node unconditionally, which resets
-  // any :hover state (e.g. a tooltip) sitting under the mouse and makes it
-  // flash even though nothing about the account list actually changed.
-  const changed = JSON.stringify(data) !== JSON.stringify(latestData);
-  latestData = data;
-  if (changed) render();
+  try {
+    const [accRes, quotaRes] = await Promise.all([
+      fetch('/admin/accounts'),
+      fetch('/admin/quota')
+    ]);
+    const accData = await accRes.json();
+    const quotaData = await quotaRes.json();
+
+    const accChanged = JSON.stringify(accData) !== JSON.stringify(latestData);
+    latestData = accData;
+    if (accChanged) render();
+
+    const quotaChanged = JSON.stringify(quotaData) !== JSON.stringify(latestQuota);
+    latestQuota = quotaData;
+    if (quotaChanged) renderQuota();
+  } catch (err) {
+    console.error('Refresh failed:', err);
+  }
+}
+
+function renderQuota() {
+  const q = latestQuota;
+  
+  // Overall Summary
+  document.getElementById('stat-totalTokens').textContent = formatNumber(q.overall.totalTokens || 0);
+  document.getElementById('stat-promptTokens').textContent = formatNumber(q.overall.promptTokens || 0);
+  document.getElementById('stat-completionTokens').textContent = formatNumber(q.overall.completionTokens || 0);
+  document.getElementById('stat-requestCount').textContent = (q.overall.requestCount || 0).toLocaleString();
+  document.getElementById('stat-errorCount').textContent = (q.overall.errorCount || 0).toLocaleString();
+  document.getElementById('stat-rateLimitCount').textContent = (q.overall.rateLimitCount || 0).toLocaleString();
+
+  // Model Table
+  const mBody = document.querySelector('#modelUsageTable tbody');
+  mBody.innerHTML = '';
+  const sortedModels = Object.entries(q.models || {}).sort((a, b) => b[1].totalTokens - a[1].totalTokens);
+  for (const [id, rec] of sortedModels) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = 
+      '<td class="mono">' + escapeHtml(id) + '</td>' +
+      '<td class="text-right">' + rec.requestCount.toLocaleString() + '</td>' +
+      '<td class="text-right">' + formatNumber(rec.totalTokens) + ' <span class="dim">(' + formatNumber(rec.promptTokens) + '/' + formatNumber(rec.completionTokens) + ')</span></td>' +
+      '<td class="text-right ' + (rec.errorCount > 0 ? 'err-count' : 'dim') + '">' + rec.errorCount.toLocaleString() + '</td>' +
+      '<td class="text-right ' + (rec.rateLimitCount > 0 ? 'rl-count' : 'dim') + '">' + rec.rateLimitCount.toLocaleString() + '</td>' +
+      '<td class="text-right dim">' + formatRelativeTime(rec.lastUsedAt) + '</td>';
+    mBody.appendChild(tr);
+  }
+  if (sortedModels.length === 0) {
+    mBody.innerHTML = '<tr><td colspan="6" class="dim" style="text-align:center;padding:20px;">No model usage recorded yet.</td></tr>';
+  }
+
+  // Account Table
+  const aBody = document.querySelector('#accountUsageTable tbody');
+  aBody.innerHTML = '';
+  const sortedAccounts = Object.entries(q.accounts || {}).sort((a, b) => b[1].totalTokens - a[1].totalTokens);
+  
+  // Create a map for identity lookup from latestData.accounts
+  const accountLabels = {};
+  for (const acc of latestData.accounts) {
+    accountLabels[acc.id] = acc.backend === 'antigravity' ? (acc.email || '(pending)') : (acc.label || acc.apiKeyMasked);
+  }
+
+  for (const [id, rec] of sortedAccounts) {
+    const label = accountLabels[id] || id.slice(0, 8) + '...';
+    const tr = document.createElement('tr');
+    tr.innerHTML = 
+      '<td class="mono" title="' + id + '">' + escapeHtml(label) + '</td>' +
+      '<td class="text-right">' + rec.requestCount.toLocaleString() + '</td>' +
+      '<td class="text-right">' + formatNumber(rec.totalTokens) + '</td>' +
+      '<td class="text-right ' + (rec.errorCount > 0 ? 'err-count' : 'dim') + '">' + rec.errorCount.toLocaleString() + '</td>' +
+      '<td class="text-right dim">' + formatRelativeTime(rec.lastUsedAt) + '</td>';
+    aBody.appendChild(tr);
+  }
+  if (sortedAccounts.length === 0) {
+    aBody.innerHTML = '<tr><td colspan="5" class="dim" style="text-align:center;padding:20px;">No account usage recorded yet.</td></tr>';
+  }
 }
 
 // Which account's quota panel (if any) is expanded, and what it last fetched.

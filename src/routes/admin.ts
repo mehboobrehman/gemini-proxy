@@ -26,6 +26,7 @@ import {
 import { ANTIGRAVITY_ENDPOINTS } from "../constants";
 import { openAIErrorResponse } from "../errors";
 import { listAvailableModels } from "../models";
+import { getQuotaStats } from "../quotaTracker";
 import { validateApiKey } from "../transports/apikey";
 
 interface PendingOAuth {
@@ -224,6 +225,10 @@ export async function handleAdmin(req: Request, url: URL): Promise<Response> {
 
   if (req.method === "GET" && parts[1] === "oauth" && parts[2] === "status" && parts.length === 4) {
     return oauthStatus(parts[3]!);
+  }
+
+  if (req.method === "GET" && parts[1] === "quota" && parts.length === 2) {
+    return json(getQuotaStats());
   }
 
   return openAIErrorResponse(404, `Unknown admin route: ${req.method} ${url.pathname}`);
